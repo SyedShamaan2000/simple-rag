@@ -1,0 +1,19 @@
+PROJECT OVERVIEW:
+This is a high-performance RAG (Retrieval-Augmented Generation) system built in 2026. 
+It uses Python 3.14, FastAPI for the backend, and PostgreSQL with the pgvector extension as the primary vector database.
+
+MACHINE LEARNING CORE CONCEPTS:
+1. Supervised Learning: A type of ML where the model is trained on labeled data. The goal is to learn a mapping from inputs to outputs.
+2. Unsupervised Learning: Finding hidden patterns or intrinsic structures in input data without labeled responses.
+3. Neural Networks: Computational models inspired by the human brain, consisting of interconnected layers of nodes (neurons).
+4. Embeddings: High-dimensional numerical vectors that represent the semantic meaning of text. In this project, we use Google's models/text-embedding-004.
+
+TECHNICAL STACK DETAILS:
+- Database: PostgreSQL 17 with pgvector.
+- LLM: Gemini 2.0 Flash via Google AI Studio.
+- Orchestration: LangChain & FastAPI.
+- Environment Management: uv.
+
+OPERATIONAL INSTRUCTIONS:
+To add new data to the system, place text in this file and run 'uv run ingest.py'. 
+The system uses a RecursiveCharacterTextSplitter with a chunk size of 1000 characters and a 100-character overlap.
