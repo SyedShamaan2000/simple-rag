@@ -28,7 +28,7 @@ ml-rag-project/
 - **Embeddings**: uses `GoogleGenerativeAIEmbeddings` (Gemini), configured in `database.py`.
 - **Vector store**: PGVector via `langchain_postgres` (collection name: `knowledge_base`).
 - **Ingestion**: `ingest.py` loads a text file, splits it into chunks (`chunk_size=1000`, `chunk_overlap=100`), and stores the resulting embeddings.
-- **API**: `main.py` exposes `POST /ask`, which retrieves the top-k (`k=4`) most similar chunks, builds a grounding prompt, calls Gemini (`gemini-2.0-flash-lite`), and returns an answer along with the source chunks and their similarity scores.
+- **API**: `main.py` exposes `POST /ask`, which retrieves the top-k (`k=4`) most similar chunks, builds a grounding prompt, calls Gemini (`gemini-3.5-flash-lite`), and returns an answer along with the source chunks and their similarity scores.
 
 ## Design decisions & tradeoffs
 
@@ -65,29 +65,46 @@ Note: the included `docker-compose.yml` starts Postgres with user `postgres` and
 ## Quickstart (local development)
 
 1. **Copy the env template and edit secrets**
+
    ```
    cp .env.reference .env
    # Edit .env: set GOOGLE_API_KEY and DATABASE_URL
    ```
 
 2. **Start Postgres + pgvector**
+
    ```
    docker-compose up -d
    # Wait until the DB container reports healthy
    ```
 
 3. **Install Python dependencies**
+
+   You can install dependencies using either `pip` or [`uv`](https://github.com/astral-sh/uv):
+
+   **With pip:**
+
    ```
    python -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
    ```
 
+   **With uv (faster, recommended if compatible):**
+
+   ```
+   uv venv .venv
+   source .venv/bin/activate
+   uv sync
+   ```
+
 4. **Ingest documents**
    By default, `ingest.py` reads `knowledge.txt` from the repo root:
+
    ```
    python ingest.py
    ```
+
    To ingest other sources, replace the loader in `ingest.py` or add a small CLI wrapper.
 
 5. **Run the API server**
@@ -100,6 +117,7 @@ Note: the included `docker-compose.yml` starts Postgres with user `postgres` and
 **Endpoint:** `POST /ask`
 
 **Request body:**
+
 ```json
 {
   "question": "Your question here"
@@ -107,6 +125,7 @@ Note: the included `docker-compose.yml` starts Postgres with user `postgres` and
 ```
 
 **Curl example:**
+
 ```
 curl -s -X POST "http://localhost:8000/ask" \
   -H "Content-Type: application/json" \
@@ -114,13 +133,14 @@ curl -s -X POST "http://localhost:8000/ask" \
 ```
 
 **Response format** (from `schemas.py`):
+
 ```json
 {
   "answer": "...",
   "sources": [
     { "content": "...", "score": 0.1234, "metadata": {...} }
   ],
-  "model_used": "gemini-2.0-flash"
+  "model_used": "gemini-3.5-flash-lite"
 }
 ```
 

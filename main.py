@@ -12,7 +12,6 @@ from langchain_postgres import PGVector
 from database import get_vector_store
 from schemas import QueryRequest, QueryResponse, SourceDocument
 
-
 # 1. Setup Logging & Environment
 logging.basicConfig(level=logging.INFO)
 logger: logging.Logger = logging.getLogger(__name__)
@@ -21,7 +20,7 @@ app = FastAPI(title="Pro-Level Free RAG API")
 
 # 2. Initialize the LLM (Gemini Flash)
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash-lite",
+    model="gemini-3.5-flash-lite",
     temperature=0,
     google_api_key=os.getenv("GOOGLE_API_KEY"),
     max_retries=3,  # Automatically retry up to 3 times on 429 errors
@@ -46,6 +45,26 @@ Question:
 Answer:
 """
 
+MODEL_USED = "gemini-3.5-flash-lite"
+
+
+def _message_text(message: AIMessage) -> str:
+    """Gemini may return content as a string or a list of text blocks."""
+    content = message.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return str(content)
+
 
 @app.post("/ask", response_model=QueryResponse)
 async def ask_question(request: QueryRequest) -> QueryResponse:
@@ -63,7 +82,7 @@ async def ask_question(request: QueryRequest) -> QueryResponse:
             return QueryResponse(
                 answer="I couldn't find any relevant documents in the database.",
                 sources=[],
-                model_used="gemini-2.0-flash",
+                model_used=MODEL_USED,
             )
 
         # B. FORMATTING: Prepare context string and source list
@@ -89,9 +108,11 @@ async def ask_question(request: QueryRequest) -> QueryResponse:
         )
 
         return QueryResponse(
-            answer=response.content, sources=sources, model_used="gemini-2.0-flash"
+            answer=_message_text(response),
+            sources=sources,
+            model_used=MODEL_USED,
         )
 
     except Exception as e:
-        logger.error(f"Error during RAG process: {str(e)}")
+        logger.error(f"Error during RAG process: {e!s}")
         raise HTTPException(status_code=500, detail="Internal system error.") from e
