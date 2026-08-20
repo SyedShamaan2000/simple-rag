@@ -1,34 +1,59 @@
 import logging
 import os
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from langchain.messages import AIMessage
 from langchain_core.documents.base import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_postgres import PGVector
 
-# Internal imports from our previous steps
 from database import get_vector_store
-from schemas import QueryRequest, QueryResponse, SourceDocument
+from ingest import ingest_text
+from schemas import (
+    HealthResponse,
+    IngestResponse,
+    IngestTextRequest,
+    QueryRequest,
+    QueryResponse,
+    SourceDocument,
+)
 
-# 1. Setup Logging & Environment
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 logger: logging.Logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Pro-Level Free RAG API")
+app = FastAPI(
+    title="simple-rag",
+    description="Backend API for the RAG knowledge assistant.",
+    version="0.1.0",
+)
 
-# 2. Initialize the LLM (Gemini Flash)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite",
     temperature=0,
     google_api_key=os.getenv("GOOGLE_API_KEY"),
-    max_retries=3,  # Automatically retry up to 3 times on 429 errors
-    timeout=60,  # Wait up to 60 seconds for a response
+    max_retries=3,
+    timeout=60,
 )
 
-# 3. Define the Prompt Template
-# This is where we "ground" the AI to prevent hallucinations.
 RAG_PROMPT_TEMPLATE = """
 You are a helpful AI assistant. Use the following pieces of retrieved context
 to answer the user's question.
@@ -46,6 +71,7 @@ Answer:
 """
 
 MODEL_USED = "gemini-3.5-flash-lite"
+ALLOWED_UPLOAD_SUFFIXES = {".txt", ".md"}
 
 
 def _message_text(message: AIMessage) -> str:
@@ -66,14 +92,18 @@ def _message_text(message: AIMessage) -> str:
     return str(content)
 
 
+@app.get("/", response_model=HealthResponse)
+@app.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    return HealthResponse(status="ok", service="simple-rag")
+
+
 @app.post("/ask", response_model=QueryResponse)
 async def ask_question(request: QueryRequest) -> QueryResponse:
     try:
         logger.info(f"Processing query: {request.question}")
 
-        # A. RETRIEVAL: Search Postgres for top 4 matches
         vector_store: PGVector = get_vector_store()
-        # similarity_search_with_score returns a tuple (Document, float_score)
         results: list[tuple[Document, float]] = (
             vector_store.similarity_search_with_score(request.question, k=4)
         )
@@ -85,7 +115,6 @@ async def ask_question(request: QueryRequest) -> QueryResponse:
                 model_used=MODEL_USED,
             )
 
-        # B. FORMATTING: Prepare context string and source list
         context_text: str = "\n\n---\n\n".join([doc.page_content for doc, _ in results])
 
         sources: list[SourceDocument] = [
@@ -97,7 +126,6 @@ async def ask_question(request: QueryRequest) -> QueryResponse:
             for doc, score in results
         ]
 
-        # C. GENERATION: Send to Gemini
         prompt: ChatPromptTemplate = ChatPromptTemplate.from_template(
             RAG_PROMPT_TEMPLATE
         )
@@ -116,3 +144,43 @@ async def ask_question(request: QueryRequest) -> QueryResponse:
     except Exception as e:
         logger.error(f"Error during RAG process: {e!s}")
         raise HTTPException(status_code=500, detail="Internal system error.") from e
+
+
+@app.post("/ingest", response_model=IngestResponse)
+async def ingest_from_text(request: IngestTextRequest) -> IngestResponse:
+    try:
+        chunks_stored = ingest_text(request.text, source=request.source)
+        return IngestResponse(chunks_stored=chunks_stored, source=request.source)
+    except Exception as e:
+        logger.error(f"Error during text ingest: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to ingest text.") from e
+
+
+@app.post("/ingest/file", response_model=IngestResponse)
+async def ingest_from_file(file: UploadFile = File(...)) -> IngestResponse:
+    filename = file.filename or "upload.txt"
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_UPLOAD_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_UPLOAD_SUFFIXES))}",
+        )
+
+    try:
+        raw = await file.read()
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail="File must be UTF-8 text.",
+        ) from e
+
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    try:
+        chunks_stored = ingest_text(text, source=filename)
+        return IngestResponse(chunks_stored=chunks_stored, source=filename)
+    except Exception as e:
+        logger.error(f"Error during file ingest: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to ingest file.") from e

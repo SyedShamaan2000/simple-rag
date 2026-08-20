@@ -114,17 +114,11 @@ Note: the included `docker-compose.yml` starts Postgres with user `postgres` and
 
 ## API usage
 
-**Endpoint:** `POST /ask`
+Interactive docs: `http://localhost:8000/docs`
 
-**Request body:**
+**Health:** `GET /` or `GET /health`
 
-```json
-{
-  "question": "Your question here"
-}
-```
-
-**Curl example:**
+**Ask:** `POST /ask`
 
 ```
 curl -s -X POST "http://localhost:8000/ask" \
@@ -132,7 +126,22 @@ curl -s -X POST "http://localhost:8000/ask" \
   -d '{"question":"How do I ingest documents?"}'
 ```
 
-**Response format** (from `schemas.py`):
+**Ingest text:** `POST /ingest`
+
+```
+curl -s -X POST "http://localhost:8000/ingest" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Your notes here","source":"notes"}'
+```
+
+**Ingest file:** `POST /ingest/file` (`.txt` or `.md`)
+
+```
+curl -s -X POST "http://localhost:8000/ingest/file" \
+  -F "file=@knowledge.txt"
+```
+
+**Ask response** (from `schemas.py`):
 
 ```json
 {

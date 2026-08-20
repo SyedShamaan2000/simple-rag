@@ -1,22 +1,34 @@
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
-# This is what the user sends TO the API
 class QueryRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1)
 
 
-# This represents a single chunk found in Postgres
 class SourceDocument(BaseModel):
     content: str
     score: float
     metadata: dict[str, Any]
 
 
-# This is what the API sends BACK to the user
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceDocument]
     model_used: str
+
+
+class IngestTextRequest(BaseModel):
+    text: str = Field(min_length=1)
+    source: str = "uploaded"
+
+
+class IngestResponse(BaseModel):
+    chunks_stored: int
+    source: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str

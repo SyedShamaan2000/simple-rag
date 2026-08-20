@@ -12,5 +12,7 @@ dependencies = [
     "langchain-postgres>=0.0.17",
     "psycopg[binary]>=3.3.3",
     "pydantic>=2.12.5",
+    "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.20",
     "uvicorn>=0.41.0",
 ]
