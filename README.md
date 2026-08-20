@@ -123,7 +123,7 @@ Interactive docs: `http://localhost:8000/docs`
 ```
 curl -s -X POST "http://localhost:8000/ask" \
   -H "Content-Type: application/json" \
-  -d '{"question":"How do I ingest documents?"}'
+  -d '{"question":"How do I ingest documents?","top_k":4}'
 ```
 
 **Ingest text:** `POST /ingest`
@@ -166,6 +166,7 @@ curl -s -X POST "http://localhost:8000/ingest/file" \
 - **DB connection issues**: check `docker ps` and container logs; verify credentials and host/port.
 - **API errors**: inspect FastAPI logs (stack trace) for exceptions; unhandled exceptions return HTTP 500.
 - **Gemini auth**: verify `GOOGLE_API_KEY` and quota/permissions.
+- **Pydantic V1 / Python 3.14 warning**: LangChain still imports `pydantic.v1` internally. Pydantic 2.12 emits a startup warning for that on Python 3.14; this project pins `pydantic>=2.13.0` (v1 namespace compatible with 3.14) and `langchain-core>=1.4.0`. Run `uv sync` if you still see the warning.
 
 ## Next steps / improvements
 
