@@ -7,31 +7,72 @@ from langchain_postgres import PGVector
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from database import get_vector_store
+from exceptions import IngestError
+
+logger = logging.getLogger(__name__)
+
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 100
 
 
-logging.basicConfig(level=logging.INFO)
-logger: logging.Logger = logging.getLogger(__name__)
+def _split_and_store(docs: list[Document]) -> int:
+    if not docs:
+        raise IngestError("no documents to ingest")
 
-
-def ingest_document(file_path: str) -> None:
-    logger.info(f"Starting ingestion for {file_path}")
-
-    # 1. Load data
-    loader = TextLoader(file_path)
-    docs: list[Document] = loader.load()
-
-    # 2. Split into chunks
-    # We use 1000 chars with a 100 char overlap so context isn't lost at the edges
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+    )
     chunks: list[Document] = text_splitter.split_documents(docs)
+    if not chunks:
+        logger.info("ingest.no_chunks", extra={"doc_count": len(docs)})
+        return 0
 
-    # 3. Store in Postgres
     vector_store: PGVector = get_vector_store()
-    vector_store.add_documents(chunks)
+    try:
+        vector_store.add_documents(chunks)
+    except (OSError, ValueError) as err:
+        logger.exception("ingest.store_failed", extra={"chunk_count": len(chunks)})
+        raise IngestError("failed to store chunks") from err
 
-    logger.info(f"Successfully stored {len(chunks)} chunks in Postgres.")
+    logger.info("ingest.chunk_saved", extra={"chunk_count": len(chunks)})
+    return len(chunks)
+
+
+def ingest_text(text: str, source: str = "uploaded") -> int:
+    if text is None:
+        raise IngestError("text is required")
+    if not text.strip():
+        raise IngestError("text must be non-empty")
+    if source is None or not source.strip():
+        raise IngestError("source must be non-empty")
+
+    docs = [Document(page_content=text, metadata={"source": source.strip()})]
+    return _split_and_store(docs)
+
+
+def ingest_document(file_path: str) -> int:
+    if file_path is None or not file_path.strip():
+        raise IngestError("file_path is required")
+
+    path = Path(file_path)
+    if not path.is_file():
+        raise IngestError(f"file not found: {path}")
+
+    logger.info("ingest.start", extra={"path": str(path)})
+    try:
+        loader = TextLoader(str(path))
+        docs: list[Document] = loader.load()
+    except OSError as err:
+        logger.exception("ingest.load_failed", extra={"path": str(path)})
+        raise IngestError(f"failed to load file: {path}") from err
+
+    if not docs:
+        raise IngestError(f"file contained no documents: {path}")
+
+    return _split_and_store(docs)
 
 
 if __name__ == "__main__":
-    with Path("knowledge.txt").open():
-        ingest_document("knowledge.txt")
+    logging.basicConfig(level=logging.INFO)
+    ingest_document("knowledge.txt")
