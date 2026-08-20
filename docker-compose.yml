@@ -1,32 +1,62 @@
+# Local Postgres with pgvector (embeddings) plus an optional pgAdmin UI.
+# Start: docker compose up -d
+# Stop:  docker compose down          (keeps data)
+# Wipe:  docker compose down -v       (deletes the postgres_data volume)
+#
+# App connection string (see .env.reference):
+#   postgresql+psycopg://postgres:mysecretpassword@localhost:5432/ai_assistant
+
 services:
+  # Vector store used by ingest.py / the FastAPI app (langchain PGVector).
   db:
+    # Official Postgres 17 image with the pgvector extension preinstalled.
     image: pgvector/pgvector:pg17
     container_name: vector_db
+
+    # Host 5432 -> container 5432. Apps on the Mac use localhost:5432.
+    # If something else already binds 5432, change the left-hand port only.
     ports:
       - "5432:5432"
+
+    # First boot only: creates this role and database inside the data volume.
+    # Changing these later does nothing unless you recreate the volume.
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: mysecretpassword
       POSTGRES_DB: ai_assistant
+
+    # Named volume so tables/embeddings survive container restarts.
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+    # Marks the service healthy once Postgres accepts connections.
+    # Other compose services can wait with: depends_on: db: condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Optional: A web UI to see your data
+  # Browser UI for inspecting tables. Not required to run the RAG API.
+  # Open http://localhost:8080 and log in with the env vars below.
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin_ui
     ports:
       - "8080:80"
+
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: admin
+
+    # pgAdmin starts after db is created. To connect in the UI:
+    #   Host: db          (compose service name on the Docker network — not localhost)
+    #   Port: 5432
+    #   Username / DB: postgres / ai_assistant
+    #   Password: mysecretpassword
     depends_on:
       - db
 
+# Docker-managed disk for Postgres. Lives until `docker compose down -v`.
 volumes:
   postgres_data:
